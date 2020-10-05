@@ -48,15 +48,15 @@ def get_confidences__line_level(soup):
 
 
 if __name__ == '__main__':
-
+	# Options parser
 	options = tools.get_args()
 	dir_path = options.data_dir
 	level = options.level
-
+	# For each file in the html directory
 	for file in glob.glob(dir_path + '*.html'):
 		inFile = io.open(file, mode='r', encoding='utf-8') 
 		html = inFile.read()
-		soup = BeautifulSoup(html) # parsing
+		soup = BeautifulSoup(html, 'lxml') # parsing
 		if level == 'page':
 			sum_, tot = get_confidences__page_level(soup)
 			mean = sum_ / tot if tot != 0 else 0
@@ -66,5 +66,5 @@ if __name__ == '__main__':
 			for cpt, mean in confidences_per_line.items():
 				print(file + '\t' + str(cpt) + '\t' + str(mean))
 		else:
-			print('Please enter "page" or "line" for the --level argument.')
+			print('ERROR: Please enter "page" or "line" for the --level argument.')
 			break
