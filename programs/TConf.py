@@ -6,11 +6,11 @@ import sys
 import io
 import glob
 import matplotlib.pyplot as plt
+import tools
 from bs4 import BeautifulSoup
 
 def get_confidences__page_level(soup):
 	confidences_sum, tot = 0, 0
-
 	for span in soup.find_all('span'): # tokens are in: <span class="ocrx_word">
 		if span.get('class') == ['ocrx_word']:
 			txt = span.get_text()
@@ -21,43 +21,50 @@ def get_confidences__page_level(soup):
 			for c in confidences:
 				confidences_sum += float(c)
 				tot += 1
-
 	return (confidences_sum, tot)
 
-def get_confidences__char_level(soup):
-	confidences_per_char = {}
-	for span in soup.find_all('span'):  # tokens are in: <span class="ocrx_word">
-		if span.get('class') == ['ocrx_word']:
-			txt = span.get_text()
-			nbChar = len(txt)
-			t = span.get('title')
-			confidences = t.split(';')[1].split(' ') # ['', 'x_confs', '0.5362149']
-			confidences = confidences[2:]
-			for i in range(nbChar):
-				cur_char = txt[i]
-				cur_conf = float(confidences[i])
+def get_confidences__line_level(soup):
+	confidences_per_line = {}
+	cpt = 0
+	for span in soup.find_all('span'):  
+		if span.get('class') == ['ocr_line']: # each line
+			confidences_sum, tot = 0, 0
+			for elm in span.find_all('span'):
+				if elm.get('class') == ['ocrx_word']: # each token
+					txt = elm.get_text()
+					nbChar = len(txt)
+					t = elm.get('title')
+					confidences = t.split(';')[1].split(' ') # ['', 'x_confs', '0.5362149']
+					confidences = confidences[2:]
+					for c in confidences:
+						confidences_sum += float(c)
+						tot += 1
+			mean = confidences_sum / tot if tot != 0 else 0
+			confidences_per_line[cpt] = mean
+			cpt += 1
 
-				if cur_char not in confidences_per_char.keys():
-					confidences_per_char[cur_char] = [cur_conf, 1]
-				else:
-					confidences_per_char[cur_char][0] += cur_conf
-					confidences_per_char[cur_char][1] += 1
-
-	return confidences_per_char
+	return confidences_per_line
 
 
 
 if __name__ == '__main__':
 
-	dir_path = sys.argv[1]
+	options = tools.get_args()
+	dir_path = options.data_dir
+	level = options.level
 
 	for file in glob.glob(dir_path + '*.html'):
 		inFile = io.open(file, mode='r', encoding='utf-8') 
 		html = inFile.read()
 		soup = BeautifulSoup(html) # parsing
-		sum_, tot = get_confidences__page_level(soup)
-		if tot != 0: # we do not want an empty page
-			mean = sum_ / tot
+		if level == 'page':
+			sum_, tot = get_confidences__page_level(soup)
+			mean = sum_ / tot if tot != 0 else 0
 			print(file + '\t' + str(mean))
+		elif level == 'line':
+			confidences_per_line = get_confidences__line_level(soup)
+			for cpt, mean in confidences_per_line.items():
+				print(file + '\t' + str(cpt) + '\t' + str(mean))
 		else:
-			print(file + '\t' + str(0))
+			print('Please enter "page" or "line" for the --level argument.')
+			break
