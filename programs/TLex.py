@@ -1,65 +1,61 @@
 import sys
 import io
 import glob
+import tools
 from bs4 import BeautifulSoup
-import editdistance
-import matplotlib.pyplot as plt
 
-def get_lexical_entries(lex_path):
-	print('Début de l\'acquisition du lexique...')
-	lex = []
-	inFile = io.open(lex_path, mode='r', encoding='utf-8')
-	line = inFile.readline()
-	while line != '':
-		if '<orthography>' in line and '</orthography>' in line:
-			lex_entry = line.strip().replace('\t', '').replace('<orthography>', '').replace('</orthography>', '')
-			lex.append(lex_entry)
-		line = inFile.readline()
-	inFile.close()
-	print('Fin.')
-	return lex
-
-def pourcent_tokens_in_lex(soup, lex):
-	nb_tokens = 0
-	nb_in = 0
+def tokens_in_lex__page_level(soup, lex):
+	nb_tokens, nb_in_voc = 0, 0
 	for span in soup.find_all('span'):  # tokens are in: <span class="ocrx_word">
 		if span.get('class') == ['ocrx_word']:
 			txt = span.get_text()
 			if txt.lower() in lex:
-				nb_in += 1
+				nb_in_voc += 1
 			nb_tokens += 1
-	return nb_tokens, nb_in
+	return nb_tokens, nb_in_voc
 
-def get_min_edit_distance(token, lex):
-	distances = [editdistance.eval(token, l) for l in lex]
-	return min(distances)
-
-
-def mean_edit_distance__nearest_lex(soup, lex):
-	nb_tokens = 0
-	sum_ed = 0
-	for span in soup.find_all('span'):  # tokens are in: <span class="ocrx_word">
-		if span.get('class') == ['ocrx_word']:
-			txt = span.get_text()
-			sum_ed += get_min_edit_distance(txt, lex)
-			nb_tokens += 1
-	return nb_tokens, sum_ed
+def get_confidences__line_level(soup, lex):
+	tl_per_line = {}
+	cpt = 0 # line counter
+	for span in soup.find_all('span'):  
+		if span.get('class') == ['ocr_line']: # each line
+			nb_tokens, nb_in_voc = 0, 0
+			for elm in span.find_all('span'):
+				if elm.get('class') == ['ocrx_word']: # each token
+					txt = elm.get_text()
+					if txt.lower() in lex:
+						nb_in_voc += 1
+					nb_tokens += 1
+			rate = nb_in_voc / nb_tokens if nb_tokens != 0 else 0
+			tl_per_line[cpt] = rate
+			cpt += 1
+	return tl_per_line
 
 if __name__ == '__main__':
-	dir_path = sys.argv[1]
-	lex_path = sys.argv[2]
-
+	# Options parser
+	options = tools.get_args()
+	dir_path = options.data_dir
+	level = options.level
+	lex_path = options.vocabulary
+	# Lexicon 
 	lex_file = io.open(lex_path, mode='r', encoding='utf-8')
 	lex = set([w.strip() for w in lex_file.readlines()])
-	
 
+	# For each file in the html directory
 	for file in glob.glob(dir_path + '*.html'):
-		inFile = io.open(file, mode='r', encoding='utf-8') 
+		# Parsing
+		inFile = io.open(file, mode='r', encoding='utf-8')
 		html = inFile.read()
-		soup = BeautifulSoup(html, features='html.parser') # parsing
-		nb_tokens, nb_in = pourcent_tokens_in_lex(soup, lex)
-		if nb_tokens != 0:
-			tx = 100 * nb_in / nb_tokens
-			print(file + '\t' + str(tx))
+		soup = BeautifulSoup(html, 'lxml') # parsing
+		if level == 'page':
+			nb_tokens, nb_in_voc = tokens_in_lex__page_level(soup, lex)
+			rate = nb_in_voc / nb_tokens if nb_tokens != 0 else 0
+			print(file + '\t' + str(rate))
+		elif level == 'line':
+			tl_per_line = get_confidences__line_level(soup, lex)
+			for cpt, tl in tl_per_line.items():
+				print(file + '\t' + str(cpt) + '\t' + str(tl))
 		else:
-			print(file + '\t' + str(0))
+			print('ERROR: Please enter "page" or "line" for the --level argument.')
+			break
+		
